@@ -1,0 +1,12 @@
+{
+  "name": "holder-cfo-proxy",
+  "version": "1.0.0",
+  "description": "Secure proxy for Holder CFO Dashboard chat",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
