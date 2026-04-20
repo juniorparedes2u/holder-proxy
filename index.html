@@ -2400,13 +2400,13 @@ function renderVariaciones() {
 
 var chatHistory = [];
 var chatOpen    = false;
-var WORKER_URL_KEY = 'holder_worker_url';
+var API_KEY_STORAGE = 'holder_cfo_apikey';
 
-function getWorkerUrl() {
-  try { return localStorage.getItem(WORKER_URL_KEY) || ''; } catch(e) { return ''; }
+function getApiKey() {
+  try { return localStorage.getItem(API_KEY_STORAGE) || ''; } catch(e) { return ''; }
 }
-function setWorkerUrl(url) {
-  try { localStorage.setItem(WORKER_URL_KEY, url.trim()); } catch(e) {}
+function setApiKey(k) {
+  try { localStorage.setItem(API_KEY_STORAGE, k.trim()); } catch(e) {}
 }
 
 /* ── Context builder ── */
@@ -2516,6 +2516,17 @@ function toggleChat() {
   }
 }
 
+
+function showApiKeySettings() {
+  var current = getApiKey();
+  var masked = current ? current.substring(0,8)+'...'+current.slice(-4) : 'No configurada';
+  var newKey = prompt('API Key actual: ' + masked + '\n\nPega tu nueva sk-ant-... (deja vacío para cancelar):');
+  if (!newKey) return;
+  newKey = newKey.trim();
+  if (!newKey.startsWith('sk-ant')) { alert('La clave debe comenzar con sk-ant-'); return; }
+  setApiKey(newKey);
+  alert('✅ API Key actualizada correctamente.');
+}
 function showWorkerSetup() {
   var container = document.getElementById('chat-messages');
   if (!container) return;
@@ -2523,33 +2534,33 @@ function showWorkerSetup() {
     '<div class="chat-setup">' +
     '<div class="chat-setup-icon">🔑</div>' +
     '<div class="chat-setup-title">Configurar CFO AI Chat</div>' +
-    '<div class="chat-setup-text">Para proteger tu API Key, el chat usa un proxy en Railway. Solo necesitas configurarlo una vez.</div>' +
+    '<div class="chat-setup-text">Ingresa tu API Key de Anthropic. Se guarda solo en este navegador (localStorage) y nunca se envía a terceros.</div>' +
     '<div class="chat-setup-steps">' +
-    '<div class="css-step"><span class="css-num">1</span> Ve a <strong>railway.app</strong> → New Project → Deploy from GitHub repo (o desde template)</div>' +
-    '<div class="css-step"><span class="css-num">2</span> Sube los archivos <strong>server.js</strong> y <strong>package.json</strong> que descargaste junto al dashboard</div>' +
-    '<div class="css-step"><span class="css-num">3</span> En Variables agrega: <code>ANTHROPIC_API_KEY</code> = tu clave <code>sk-ant-...</code></div>' +
-    '<div class="css-step"><span class="css-num">4</span> Railway generará una URL tipo <code>https://holder-proxy.up.railway.app</code></div>' +
-    '<div class="css-step"><span class="css-num">5</span> Pega esa URL aquí abajo y guarda</div>' +
+    '<div class="css-step"><span class="css-num">1</span> Ve a <strong>console.anthropic.com</strong> → API Keys → Create Key</div>' +
+    '<div class="css-step"><span class="css-num">2</span> Copia tu clave <code>sk-ant-...</code> y pégala abajo</div>' +
+    '<div class="css-step"><span class="css-num">3</span> Haz clic en <strong>Guardar y conectar</strong>. Listo.</div>' +
     '</div>' +
     '<div class="chat-setup-form">' +
-    '<input id="worker-url-input" type="url" placeholder="https://tu-proxy.up.railway.app" class="chat-setup-input">' +
+    '<input id="worker-url-input" type="password" placeholder="sk-ant-api03-..." class="chat-setup-input" autocomplete="off">' +
     '<button onclick="saveWorkerUrl()" class="chat-setup-save">Guardar y conectar</button>' +
     '</div>' +
+    '<div style="font-size:10px;color:var(--mu);margin-top:10px;text-align:center">🔒 La clave se almacena solo localmente en este dispositivo</div>' +
     '</div>';
 }
 
 function saveWorkerUrl() {
   var input = document.getElementById('worker-url-input');
   if (!input) return;
-  var url = input.value.trim();
-  if (!url || !url.startsWith('http')) {
+  var key = input.value.trim();
+  if (!key || !key.startsWith('sk-ant')) {
     input.style.borderColor = 'var(--rd)';
+    input.placeholder = 'Debe comenzar con sk-ant-...';
     return;
   }
-  setWorkerUrl(url);
+  setApiKey(key);
   var container = document.getElementById('chat-messages');
   container.innerHTML = '';
-  addChatMessage('assistant', '✅ Worker configurado correctamente.\n\nYa puedes hacer consultas sobre los estados financieros del Grupo Holder. ¿En qué puedo ayudarte?');
+  addChatMessage('assistant', '✅ API Key configurada correctamente.\n\nYa puedes hacer consultas sobre los estados financieros del Grupo Holder. ¿En qué puedo ayudarte?');
 }
 
 function addChatMessage(role, text) {
@@ -2599,8 +2610,8 @@ async function sendChatMessage() {
   var text = input.value.trim();
   if (!text) return;
 
-  var workerUrl = getWorkerUrl();
-  if (!workerUrl) { showWorkerSetup(); return; }
+  var apiKey = getApiKey();
+  if (!apiKey) { showWorkerSetup(); return; }
 
   input.value = '';
   input.style.height = 'auto';
@@ -2614,11 +2625,16 @@ async function sendChatMessage() {
     var systemCtx = buildFinancialContext();
     var recentMessages = chatHistory.slice(-10);
 
-    // iOS/Safari compatible fetch — no custom headers beyond Content-Type
-    var response = await fetch(workerUrl, {
+    var response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
       body: JSON.stringify({
+        model:      'claude-opus-4-5',
         system:     systemCtx,
         messages:   recentMessages,
         max_tokens: 1000,
@@ -2630,7 +2646,7 @@ async function sendChatMessage() {
     if (!response.ok) {
       var errText = '';
       try { var errData = await response.json(); errText = errData.error || response.statusText; } catch(e) { errText = response.statusText; }
-      addChatMessage('assistant', '⚠ Error del servidor (' + response.status + '): ' + errText + '\n\nVerifica que el worker esté correctamente desplegado.');
+      addChatMessage('assistant', '⚠ Error de API (' + response.status + '): ' + errText + '\n\nVerifica tu API Key en el ícono ⚙ del chat.');
       if (sendBtn) sendBtn.disabled = false;
       return;
     }
